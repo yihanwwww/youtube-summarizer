@@ -1,3 +1,13 @@
+---
+title: Video Summarizer
+emoji: 🎬
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+---
+
 # Video Summarizer
 
 Summarize videos from **YouTube, TikTok, Twitter, Bilibili, Vimeo**, and 1000+ platforms using AI.
@@ -13,21 +23,11 @@ Summarize videos from **YouTube, TikTok, Twitter, Bilibili, Vimeo**, and 1000+ p
 
 ## Quick Start
 
-1. Visit the app
-2. Get a free API key:
+1. Get a free API key:
    - **Google Gemini (Free)**: https://aistudio.google.com/app/apikey
    - **Anthropic Claude ($5+)**: https://console.anthropic.com/
-3. Paste any video URL
-4. Click "Summarize"
-
-## Run Locally
-
-```bash
-git clone https://github.com/yihanwwww/youtube-summarizer.git
-cd youtube-summarizer
-pip install -r requirements.txt
-streamlit run app.py
-```
+2. Paste any video URL
+3. Click "Summarize"
 
 ## Supported Platforms
 
@@ -48,5 +48,14 @@ Each user enters their own API key - keys are not stored on the server.
 |----------|------|---------|
 | Google Gemini | Free (60 req/min) | [Get Key](https://aistudio.google.com/app/apikey) |
 | Anthropic Claude | $5 minimum | [Get Key](https://console.anthropic.com/) |
+
+## Run Locally
+
+```bash
+git clone https://github.com/yihanwwww/youtube-summarizer.git
+cd youtube-summarizer
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 Built with Streamlit, Whisper, and yt-dlp.

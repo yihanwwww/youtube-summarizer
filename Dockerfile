@@ -6,20 +6,28 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     npm \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for Hugging Face
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
+
 # Set working directory
-WORKDIR /app
+WORKDIR $HOME/app
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --chown=user requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
-COPY . .
+COPY --chown=user . .
 
-# Expose port
-EXPOSE 8501
+# Expose port (Hugging Face uses 7860)
+EXPOSE 7860
 
-# Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Run Streamlit on port 7860
+CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0", "--server.fileWatcherType=none"]
