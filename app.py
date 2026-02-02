@@ -1,5 +1,6 @@
 import streamlit as st
 import anthropic
+import google.generativeai as genai
 import re
 import os
 import io
@@ -28,13 +29,13 @@ except ImportError:
 load_dotenv()
 
 st.set_page_config(
-    page_title="YouTube Video Summarizer",
+    page_title="Video Summarizer",
     page_icon="🎬",
     layout="wide",
 )
 
-st.title("YouTube Video Summarizer")
-st.markdown("Summarize single videos or entire channels. Supports English and Chinese videos.")
+st.title("Video Summarizer")
+st.markdown("Summarize videos from YouTube, Vimeo, Twitter, TikTok, Bilibili, and 1000+ platforms.")
 
 
 def extract_video_id(url: str) -> str | None:
@@ -50,6 +51,11 @@ def extract_video_id(url: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def is_youtube_url(url: str) -> bool:
+    """Check if URL is a YouTube video."""
+    return bool(re.search(r'(youtube\.com|youtu\.be)', url))
 
 
 def extract_channel_id(url: str) -> str | None:
@@ -127,8 +133,8 @@ def get_channel_videos(channel_identifier: str, youtube_api_key: str, max_result
     return videos
 
 
-def transcribe_with_whisper(video_id: str, model_size: str = "base") -> tuple[str, str]:
-    """Download audio from YouTube and transcribe with Whisper.
+def transcribe_with_whisper(video_url: str, model_size: str = "base") -> tuple[str, str]:
+    """Download audio from any video URL and transcribe with Whisper.
 
     Returns: (transcript_text, language_code)
     """
@@ -138,24 +144,30 @@ def transcribe_with_whisper(video_id: str, model_size: str = "base") -> tuple[st
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "audio.mp3")
 
-        # Download audio using yt-dlp
-        url = f"https://www.youtube.com/watch?v={video_id}"
+        # Download audio using yt-dlp (supports 1000+ sites)
         cmd = [
             "yt-dlp",
             "-x",  # Extract audio
             "--audio-format", "mp3",
             "--audio-quality", "0",
-            "--js-runtimes", "node",
             "-o", audio_path,
-            url
+            video_url
         ]
+
+        # Add node runtime if available
+        try:
+            subprocess.run(["which", "node"], capture_output=True, check=True)
+            cmd.insert(1, "--js-runtimes")
+            cmd.insert(2, "node")
+        except:
+            pass
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to download audio: {result.stderr}")
 
         # Find the actual audio file (yt-dlp may add extension)
-        audio_files = [f for f in os.listdir(tmpdir) if f.endswith(('.mp3', '.m4a', '.webm', '.opus'))]
+        audio_files = [f for f in os.listdir(tmpdir) if f.endswith(('.mp3', '.m4a', '.webm', '.opus', '.wav'))]
         if not audio_files:
             raise RuntimeError("No audio file found after download")
 
@@ -171,7 +183,7 @@ def transcribe_with_whisper(video_id: str, model_size: str = "base") -> tuple[st
         return transcript_text, language
 
 
-def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whisper_fallback: bool = True) -> tuple[str, str]:
+def get_youtube_transcript(video_id: str, preferred_languages: list[str] = None) -> tuple[str, str]:
     """Fetch transcript from YouTube video with language preference.
 
     Returns: (transcript_text, language_code)
@@ -186,13 +198,9 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whi
         transcript = ytt_api.fetch(video_id, languages=preferred_languages)
         # Determine which language was used
         lang_code = 'en'  # default
-        for lang in preferred_languages:
-            if lang.startswith('zh'):
-                # Check if transcript contains Chinese characters
-                sample = str(transcript[:100]) if transcript else ""
-                if any('\u4e00' <= char <= '\u9fff' for char in sample):
-                    lang_code = lang
-                    break
+        sample = " ".join([entry.text for entry in transcript[:10]]) if transcript else ""
+        if any('\u4e00' <= char <= '\u9fff' for char in sample):
+            lang_code = 'zh'
 
         full_text = " ".join([entry.text for entry in transcript])
         return full_text, lang_code
@@ -203,11 +211,9 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whi
     try:
         transcript_list = ytt_api.list(video_id)
 
-        # Try to find a transcript in preferred languages
         transcript = None
         lang_code = None
 
-        # First try manually created transcripts
         for lang in preferred_languages:
             try:
                 transcript = transcript_list.find_manually_created_transcript([lang])
@@ -216,7 +222,6 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whi
             except NoTranscriptFound:
                 continue
 
-        # Then try auto-generated transcripts
         if transcript is None:
             for lang in preferred_languages:
                 try:
@@ -226,7 +231,6 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whi
                 except NoTranscriptFound:
                     continue
 
-        # If still no transcript, get whatever is available
         if transcript is None:
             for t in transcript_list:
                 transcript = t
@@ -240,18 +244,76 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whi
         full_text = " ".join([entry.text for entry in fetched])
         return full_text, lang_code
     except NoTranscriptFound:
-        if use_whisper_fallback and WHISPER_AVAILABLE:
-            return transcribe_with_whisper(video_id)
         raise
     except Exception as e:
-        if use_whisper_fallback and WHISPER_AVAILABLE:
-            return transcribe_with_whisper(video_id)
         raise NoTranscriptFound(video_id, preferred_languages, None) from e
+
+
+def get_transcript(video_url: str) -> tuple[str, str]:
+    """Get transcript from any video URL.
+
+    First tries YouTube captions if it's a YouTube URL, then falls back to Whisper.
+    Returns: (transcript_text, language_code)
+    """
+    # Try YouTube captions first if it's a YouTube URL
+    if is_youtube_url(video_url):
+        video_id = extract_video_id(video_url)
+        if video_id:
+            try:
+                return get_youtube_transcript(video_id)
+            except (NoTranscriptFound, TranscriptsDisabled):
+                pass  # Fall through to Whisper
+
+    # Use Whisper for all other cases
+    if WHISPER_AVAILABLE:
+        return transcribe_with_whisper(video_url)
+    else:
+        raise RuntimeError("No transcript available and Whisper is not installed")
+
+
+def summarize_with_gemini(transcript: str, api_key: str, source_language: str = "en", video_title: str = "") -> str:
+    """Send transcript to Google Gemini API for summarization."""
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    language_note = ""
+    if source_language.startswith('zh'):
+        language_note = "\n\nNote: This transcript is in Chinese. Please provide the summary report entirely in English."
+
+    title_context = ""
+    if video_title:
+        title_context = f"\n\nVideo Title: {video_title}"
+
+    prompt = f"""Please analyze the following video transcript and create a comprehensive summary report in English.{title_context}{language_note}
+
+Structure your report with these sections:
+
+## Overview
+A brief 2-3 sentence summary of what the video is about.
+
+## Key Points
+The main ideas or arguments presented in the video as bullet points.
+
+## Detailed Summary
+A more detailed breakdown of the content, organized by topic or chronologically.
+
+## Key Takeaways
+The most important insights or action items from the video.
+
+## Notable Quotes
+Any memorable or significant quotes from the video (if applicable).
+
+---
+
+TRANSCRIPT:
+{transcript}"""
+
+    response = model.generate_content(prompt)
+    return response.text
 
 
 def summarize_with_claude(transcript: str, api_key: str, source_language: str = "en", video_title: str = "") -> str:
     """Send transcript to Claude API for summarization."""
-    # Explicitly use real Anthropic API (not local proxy)
     client = anthropic.Anthropic(
         api_key=api_key,
         base_url="https://api.anthropic.com"
@@ -271,7 +333,7 @@ def summarize_with_claude(transcript: str, api_key: str, source_language: str = 
         messages=[
             {
                 "role": "user",
-                "content": f"""Please analyze the following YouTube video transcript and create a comprehensive summary report in English.{title_context}{language_note}
+                "content": f"""Please analyze the following video transcript and create a comprehensive summary report in English.{title_context}{language_note}
 
 Structure your report with these sections:
 
@@ -300,7 +362,15 @@ TRANSCRIPT:
     return message.content[0].text
 
 
-def convert_to_html(markdown_text: str, title: str = "YouTube Video Summary") -> str:
+def summarize(transcript: str, api_key: str, ai_provider: str, source_language: str = "en", video_title: str = "") -> str:
+    """Summarize transcript using selected AI provider."""
+    if ai_provider == "Google Gemini (Free)":
+        return summarize_with_gemini(transcript, api_key, source_language, video_title)
+    else:
+        return summarize_with_claude(transcript, api_key, source_language, video_title)
+
+
+def convert_to_html(markdown_text: str, title: str = "Video Summary") -> str:
     """Convert markdown to styled HTML."""
     html_content = markdown.markdown(markdown_text, extensions=['tables', 'fenced_code'])
 
@@ -341,7 +411,7 @@ def convert_to_html(markdown_text: str, title: str = "YouTube Video Summary") ->
     return styled_html
 
 
-def convert_to_pdf(markdown_text: str, title: str = "YouTube Video Summary") -> bytes:
+def convert_to_pdf(markdown_text: str, title: str = "Video Summary") -> bytes:
     """Convert markdown to PDF using weasyprint."""
     from weasyprint import HTML
 
@@ -350,15 +420,13 @@ def convert_to_pdf(markdown_text: str, title: str = "YouTube Video Summary") -> 
     return pdf_bytes
 
 
-def convert_to_docx(markdown_text: str, title: str = "YouTube Video Summary") -> bytes:
+def convert_to_docx(markdown_text: str, title: str = "Video Summary") -> bytes:
     """Convert markdown to Word document."""
     doc = Document()
 
-    # Add title
     title_para = doc.add_heading(title, 0)
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Parse markdown and add content
     lines = markdown_text.split('\n')
     for line in lines:
         line = line.strip()
@@ -370,17 +438,15 @@ def convert_to_docx(markdown_text: str, title: str = "YouTube Video Summary") ->
         elif line.startswith('### '):
             doc.add_heading(line[4:], level=2)
         elif line.startswith('- ') or line.startswith('* '):
-            para = doc.add_paragraph(line[2:], style='List Bullet')
+            doc.add_paragraph(line[2:], style='List Bullet')
         elif line.startswith('---'):
             doc.add_paragraph('_' * 50)
         else:
-            # Remove markdown bold/italic for plain text
             clean_line = re.sub(r'\*\*(.+?)\*\*', r'\1', line)
             clean_line = re.sub(r'\*(.+?)\*', r'\1', clean_line)
             if clean_line:
                 doc.add_paragraph(clean_line)
 
-    # Save to bytes
     doc_bytes = io.BytesIO()
     doc.save(doc_bytes)
     doc_bytes.seek(0)
@@ -388,159 +454,173 @@ def convert_to_docx(markdown_text: str, title: str = "YouTube Video Summary") ->
 
 
 # Sidebar settings
-api_key = os.getenv("ANTHROPIC_API_KEY", "")
+gemini_api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
 youtube_api_key = os.getenv("YOUTUBE_API_KEY", "")
 
 with st.sidebar:
     st.header("Settings")
-    user_api_key = st.text_input(
-        "Anthropic API Key",
-        value=api_key,
-        type="password",
-        help="Enter your Anthropic API key. Get one at https://console.anthropic.com/",
+
+    ai_provider = st.selectbox(
+        "AI Provider",
+        ["Google Gemini (Free)", "Anthropic Claude"],
+        help="Gemini has a free tier. Claude requires paid credits."
     )
 
+    if ai_provider == "Google Gemini (Free)":
+        user_api_key = st.text_input(
+            "Google AI API Key",
+            value=gemini_api_key,
+            type="password",
+            help="Get free key at https://aistudio.google.com/app/apikey",
+        )
+    else:
+        user_api_key = st.text_input(
+            "Anthropic API Key",
+            value=anthropic_api_key,
+            type="password",
+            help="Get key at https://console.anthropic.com/",
+        )
+
     user_youtube_api_key = st.text_input(
-        "YouTube Data API Key",
+        "YouTube Data API Key (optional)",
         value=youtube_api_key,
         type="password",
-        help="Required for channel batch processing. Get one at https://console.cloud.google.com/",
+        help="Only needed for batch channel processing.",
     )
 
     st.markdown("---")
-    st.markdown("### Export Formats")
-    export_format = st.selectbox(
-        "Choose export format",
-        ["Markdown (.md)", "HTML (.html)", "PDF (.pdf)", "Word/Google Docs (.docx)"]
-    )
+    st.markdown("### Supported Platforms")
+    st.markdown("""
+    - YouTube, Vimeo, Dailymotion
+    - Twitter/X, TikTok, Instagram
+    - Bilibili, Douyin, Weibo
+    - Facebook, Twitch
+    - And 1000+ more!
+    """)
 
     st.markdown("---")
     st.markdown("### How to use")
     st.markdown("""
-    **Single Video:**
-    1. Paste a YouTube video URL
-    2. Click 'Summarize Video'
-
-    **Batch (Channel):**
-    1. Enter YouTube API key
-    2. Paste a channel URL
-    3. Select number of videos
-    4. Click 'Process Channel'
+    1. Get a free API key
+    2. Paste any video URL
+    3. Click 'Summarize'
     """)
 
 # Main content - tabs for single vs batch
-tab1, tab2 = st.tabs(["Single Video", "Batch (Channel)"])
+tab1, tab2 = st.tabs(["Single Video", "Batch (YouTube Channel)"])
 
 with tab1:
-    st.subheader("Summarize a Single Video")
-    youtube_url = st.text_input(
-        "YouTube Video URL",
-        placeholder="https://www.youtube.com/watch?v=...",
+    st.subheader("Summarize Any Video")
+    video_url = st.text_input(
+        "Video URL",
+        placeholder="Paste any video URL (YouTube, TikTok, Twitter, Bilibili, etc.)",
         key="single_url"
     )
 
     if st.button("Summarize Video", type="primary", use_container_width=True):
         if not user_api_key:
-            st.error("Please enter your Anthropic API key in the sidebar.")
-        elif not youtube_url:
-            st.error("Please enter a YouTube URL.")
+            st.error(f"Please enter your {'Google AI' if ai_provider == 'Google Gemini (Free)' else 'Anthropic'} API key in the sidebar.")
+        elif not video_url:
+            st.error("Please enter a video URL.")
         else:
-            video_id = extract_video_id(youtube_url)
+            try:
+                with st.status("Processing video...", expanded=True) as status:
+                    st.write("Fetching transcript...")
 
-            if not video_id:
-                st.error("Could not extract video ID from the URL. Please check the URL format.")
-            else:
-                try:
-                    with st.status("Processing video...", expanded=True) as status:
-                        st.write("Fetching transcript...")
-                        try:
-                            transcript, lang_code = get_transcript(video_id, use_whisper_fallback=False)
-                            transcript_source = "YouTube captions"
-                        except (NoTranscriptFound, TranscriptsDisabled, Exception):
+                    # Try YouTube captions first, then Whisper
+                    transcript_source = "Whisper transcription"
+                    if is_youtube_url(video_url):
+                        video_id = extract_video_id(video_url)
+                        if video_id:
+                            try:
+                                transcript, lang_code = get_youtube_transcript(video_id)
+                                transcript_source = "YouTube captions"
+                            except (NoTranscriptFound, TranscriptsDisabled, Exception):
+                                if WHISPER_AVAILABLE:
+                                    st.write("No captions found. Using Whisper to transcribe audio...")
+                                    st.write("(This may take a few minutes)")
+                                    transcript, lang_code = transcribe_with_whisper(video_url)
+                                else:
+                                    raise RuntimeError("No captions available and Whisper not installed")
+                        else:
                             if WHISPER_AVAILABLE:
-                                st.write("No captions found. Using Whisper to transcribe audio...")
-                                st.write("(This may take a few minutes for longer videos)")
-                                transcript, lang_code = transcribe_with_whisper(video_id)
-                                transcript_source = "Whisper transcription"
+                                st.write("Using Whisper to transcribe audio...")
+                                transcript, lang_code = transcribe_with_whisper(video_url)
                             else:
-                                raise NoTranscriptFound(video_id, [], None)
-
-                        lang_display = "Chinese" if lang_code.startswith('zh') else "English"
-                        st.write(f"Transcript fetched via {transcript_source} ({len(transcript):,} characters, {lang_display})")
-                        st.write("Generating summary with Claude...")
-
-                        summary = summarize_with_claude(transcript, user_api_key, lang_code)
-                        status.update(label="Complete!", state="complete", expanded=False)
-
-                    st.markdown("---")
-                    st.markdown("## Summary Report")
-                    st.markdown(summary)
-
-                    # Export buttons
-                    st.markdown("### Download Report")
-                    col1, col2, col3, col4 = st.columns(4)
-
-                    with col1:
-                        st.download_button(
-                            label="📄 Markdown",
-                            data=summary,
-                            file_name="youtube_summary.md",
-                            mime="text/markdown",
-                        )
-
-                    with col2:
-                        html_content = convert_to_html(summary)
-                        st.download_button(
-                            label="🌐 HTML",
-                            data=html_content,
-                            file_name="youtube_summary.html",
-                            mime="text/html",
-                        )
-
-                    with col3:
-                        try:
-                            pdf_content = convert_to_pdf(summary)
-                            st.download_button(
-                                label="📕 PDF",
-                                data=pdf_content,
-                                file_name="youtube_summary.pdf",
-                                mime="application/pdf",
-                            )
-                        except Exception as e:
-                            st.button("📕 PDF", disabled=True, help=f"PDF generation failed: {e}")
-
-                    with col4:
-                        docx_content = convert_to_docx(summary)
-                        st.download_button(
-                            label="📝 Word/Docs",
-                            data=docx_content,
-                            file_name="youtube_summary.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        )
-
-                except TranscriptsDisabled:
-                    st.error("Transcripts are disabled for this video.")
-                except NoTranscriptFound:
-                    if not WHISPER_AVAILABLE:
-                        st.error("No captions found and Whisper is not installed. Install whisper to transcribe videos without captions.")
+                                raise RuntimeError("Whisper not installed")
                     else:
-                        st.error("No transcript found for this video. It may not have captions.")
-                except VideoUnavailable:
-                    st.error("This video is unavailable.")
-                except anthropic.AuthenticationError:
-                    st.error("Invalid Anthropic API key. Please check your key.")
-                except anthropic.RateLimitError:
-                    st.error("Rate limit exceeded. Please try again later.")
-                except anthropic.APIConnectionError as e:
-                    st.error(f"Could not connect to Anthropic API. Check your internet connection. Details: {str(e)}")
-                except Exception as e:
-                    st.error(f"An error occurred: {type(e).__name__}: {str(e)}")
+                        # Non-YouTube URL - use Whisper directly
+                        if WHISPER_AVAILABLE:
+                            st.write("Downloading and transcribing audio with Whisper...")
+                            st.write("(This may take a few minutes)")
+                            transcript, lang_code = transcribe_with_whisper(video_url)
+                        else:
+                            raise RuntimeError("Whisper not installed. Required for non-YouTube videos.")
+
+                    lang_display = "Chinese" if lang_code and lang_code.startswith('zh') else "English"
+                    st.write(f"Transcript ready via {transcript_source} ({len(transcript):,} chars, {lang_display})")
+                    st.write(f"Generating summary with {ai_provider}...")
+
+                    summary = summarize(transcript, user_api_key, ai_provider, lang_code)
+                    status.update(label="Complete!", state="complete", expanded=False)
+
+                st.markdown("---")
+                st.markdown("## Summary Report")
+                st.markdown(summary)
+
+                # Export buttons
+                st.markdown("### Download Report")
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.download_button(
+                        label="📄 Markdown",
+                        data=summary,
+                        file_name="video_summary.md",
+                        mime="text/markdown",
+                    )
+
+                with col2:
+                    html_content = convert_to_html(summary)
+                    st.download_button(
+                        label="🌐 HTML",
+                        data=html_content,
+                        file_name="video_summary.html",
+                        mime="text/html",
+                    )
+
+                with col3:
+                    try:
+                        pdf_content = convert_to_pdf(summary)
+                        st.download_button(
+                            label="📕 PDF",
+                            data=pdf_content,
+                            file_name="video_summary.pdf",
+                            mime="application/pdf",
+                        )
+                    except Exception as e:
+                        st.button("📕 PDF", disabled=True, help=f"PDF generation failed: {e}")
+
+                with col4:
+                    docx_content = convert_to_docx(summary)
+                    st.download_button(
+                        label="📝 Word/Docs",
+                        data=docx_content,
+                        file_name="video_summary.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )
+
+            except Exception as e:
+                st.error(f"An error occurred: {type(e).__name__}: {str(e)}")
 
 with tab2:
-    st.subheader("Process Entire Channel")
+    st.subheader("Process YouTube Channel")
+    st.info("Batch processing only works with YouTube channels.")
+
     channel_url = st.text_input(
         "YouTube Channel URL",
-        placeholder="https://www.youtube.com/@ChannelName or https://www.youtube.com/channel/UC...",
+        placeholder="https://www.youtube.com/@ChannelName",
         key="channel_url"
     )
 
@@ -548,16 +628,16 @@ with tab2:
 
     if st.button("Process Channel", type="primary", use_container_width=True):
         if not user_api_key:
-            st.error("Please enter your Anthropic API key in the sidebar.")
+            st.error("Please enter your API key in the sidebar.")
         elif not user_youtube_api_key:
-            st.error("Please enter your YouTube Data API key in the sidebar for channel processing.")
+            st.error("Please enter your YouTube Data API key for channel processing.")
         elif not channel_url:
             st.error("Please enter a YouTube channel URL.")
         else:
             channel_id = extract_channel_id(channel_url)
 
             if not channel_id:
-                st.error("Could not extract channel ID from the URL. Please check the URL format.")
+                st.error("Could not extract channel ID. Please check the URL.")
             else:
                 try:
                     with st.status("Processing channel...", expanded=True) as status:
@@ -565,7 +645,7 @@ with tab2:
                         videos = get_channel_videos(channel_id, user_youtube_api_key, max_videos)
 
                         if not videos:
-                            st.error("No videos found for this channel.")
+                            st.error("No videos found.")
                         else:
                             st.write(f"Found {len(videos)} videos. Processing...")
 
@@ -575,10 +655,12 @@ with tab2:
                             for i, video in enumerate(videos):
                                 st.write(f"Processing: {video['title'][:50]}...")
                                 try:
-                                    transcript, lang_code = get_transcript(video['video_id'])
-                                    summary = summarize_with_claude(
+                                    video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
+                                    transcript, lang_code = get_transcript(video_url)
+                                    summary = summarize(
                                         transcript,
                                         user_api_key,
+                                        ai_provider,
                                         lang_code,
                                         video['title']
                                     )
@@ -600,11 +682,9 @@ with tab2:
 
                             status.update(label="Complete!", state="complete", expanded=False)
 
-                    # Display results
                     st.markdown("---")
                     st.markdown("## Channel Summary Report")
 
-                    # Combined report
                     combined_report = f"# Channel Video Summaries\n\nProcessed {len(all_summaries)} videos\n\n"
 
                     for item in all_summaries:
@@ -612,13 +692,11 @@ with tab2:
                         combined_report += f"**Video URL:** https://www.youtube.com/watch?v={item['video_id']}\n\n"
                         combined_report += f"{item['summary']}\n\n"
 
-                    # Show individual summaries in expanders
                     for item in all_summaries:
                         with st.expander(f"📺 {item['title'][:60]}..."):
                             st.markdown(f"[Watch Video](https://www.youtube.com/watch?v={item['video_id']})")
                             st.markdown(item['summary'])
 
-                    # Export combined report
                     st.markdown("### Download Combined Report")
                     col1, col2, col3, col4 = st.columns(4)
 
@@ -651,8 +729,8 @@ with tab2:
                                 mime="application/pdf",
                                 key="batch_pdf"
                             )
-                        except Exception as e:
-                            st.button("📕 PDF", disabled=True, help=f"PDF generation failed: {e}", key="batch_pdf_disabled")
+                        except Exception:
+                            st.button("📕 PDF", disabled=True, key="batch_pdf_disabled")
 
                     with col4:
                         docx_content = convert_to_docx(combined_report, "Channel Summary Report")
@@ -669,6 +747,6 @@ with tab2:
 
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: gray;'>Built with Streamlit and Claude AI | Supports English & Chinese videos</div>",
+    "<div style='text-align: center; color: gray;'>Video Summarizer | Supports 1000+ platforms | Powered by Gemini & Whisper</div>",
     unsafe_allow_html=True,
 )
