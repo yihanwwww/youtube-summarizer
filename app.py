@@ -173,6 +173,12 @@ def transcribe_with_whisper(video_url: str, model_size: str = "base") -> tuple[s
                     "Audio download failed. This video requires captions to be available. "
                     "Try a different video with captions enabled, or run the app locally for full Whisper support."
                 )
+            if "Failed to resolve" in error_msg or "No address associated" in error_msg:
+                raise RuntimeError(
+                    "Network error: Cannot download audio in this environment. "
+                    "This video has no captions available. Please try a YouTube video with captions enabled, "
+                    "or run the app locally for full Whisper transcription support."
+                )
             raise RuntimeError(f"Failed to download audio: {error_msg}")
 
         # Find the actual audio file (yt-dlp may add extension)
