@@ -1,13 +1,16 @@
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies including DNS utilities
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     nodejs \
     npm \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    dnsutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 # Create non-root user for Hugging Face
 RUN useradd -m -u 1000 user
