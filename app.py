@@ -139,7 +139,7 @@ def transcribe_with_whisper(video_url: str, model_size: str = "base") -> tuple[s
     Returns: (transcript_text, language_code)
     """
     if not WHISPER_AVAILABLE:
-        raise RuntimeError("Whisper is not installed")
+        raise RuntimeError("Whisper transcription is not available. Please use a YouTube video with captions enabled.")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "audio.mp3")
@@ -154,17 +154,26 @@ def transcribe_with_whisper(video_url: str, model_size: str = "base") -> tuple[s
             video_url
         ]
 
-        # Add node runtime if available
+        # Add node runtime if available (required for YouTube)
+        node_available = False
         try:
-            subprocess.run(["which", "node"], capture_output=True, check=True)
-            cmd.insert(1, "--js-runtimes")
-            cmd.insert(2, "node")
+            node_check = subprocess.run(["which", "node"], capture_output=True, check=True)
+            if node_check.returncode == 0:
+                cmd.insert(1, "--js-runtimes")
+                cmd.insert(2, "node")
+                node_available = True
         except:
             pass
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Failed to download audio: {result.stderr}")
+            error_msg = result.stderr
+            if "403" in error_msg or "JavaScript runtime" in error_msg:
+                raise RuntimeError(
+                    "Audio download failed. This video requires captions to be available. "
+                    "Try a different video with captions enabled, or run the app locally for full Whisper support."
+                )
+            raise RuntimeError(f"Failed to download audio: {error_msg}")
 
         # Find the actual audio file (yt-dlp may add extension)
         audio_files = [f for f in os.listdir(tmpdir) if f.endswith(('.mp3', '.m4a', '.webm', '.opus', '.wav'))]
@@ -506,6 +515,9 @@ with st.sidebar:
     2. Paste any video URL
     3. Click 'Summarize'
     """)
+
+    st.markdown("---")
+    st.caption("⚠️ Cloud version works best with YouTube videos that have captions. For videos without captions, run locally.")
 
 # Main content - tabs for single vs batch
 tab1, tab2 = st.tabs(["Single Video", "Batch (YouTube Channel)"])
