@@ -34,8 +34,205 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Video Summarizer")
-st.markdown("Summarize videos from YouTube, Vimeo, Twitter, TikTok, Bilibili, and 1000+ platforms.")
+# Clean Minimal Design CSS
+st.markdown("""
+<style>
+    /* Main background */
+    .stApp {
+        background-color: #fafafa;
+    }
+
+    /* Header styling */
+    .main-header {
+        text-align: center;
+        padding: 2rem 0 1rem;
+    }
+    .main-header h1 {
+        font-size: 2.2rem;
+        font-weight: 600;
+        color: #111;
+        margin-bottom: 0.5rem;
+    }
+    .main-header p {
+        color: #666;
+        font-size: 1.05rem;
+    }
+
+    /* Card styling */
+    .css-1r6slb0, .css-12w0qpk, .stForm, [data-testid="stForm"] {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    /* Input fields */
+    .stTextInput > div > div > input {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #111;
+        box-shadow: none;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        background: #111;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 2rem;
+        font-weight: 500;
+        width: 100%;
+        transition: background 0.2s;
+    }
+    .stButton > button:hover {
+        background: #333;
+        color: #fff;
+    }
+
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background: #fff;
+        border-right: 1px solid #e5e5e5;
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 2rem;
+    }
+
+    /* Selectbox */
+    .stSelectbox > div > div {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+    }
+
+    /* Radio buttons */
+    .stRadio > div {
+        background: #f5f5f5;
+        border-radius: 8px;
+        padding: 0.5rem;
+    }
+
+    /* Expander */
+    .streamlit-expanderHeader {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
+    }
+
+    /* Results section */
+    .result-box {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    /* Tags */
+    .tag {
+        display: inline-block;
+        background: #f0f0f0;
+        color: #555;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    /* Feature pills */
+    .feature-row {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+        padding: 1.5rem 0;
+        border-top: 1px solid #eee;
+        border-bottom: 1px solid #eee;
+        margin: 1.5rem 0;
+    }
+    .feature-item {
+        text-align: center;
+        padding: 0.5rem 1rem;
+    }
+    .feature-icon {
+        font-size: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .feature-text {
+        font-size: 0.85rem;
+        color: #555;
+    }
+
+    /* Hide default Streamlit elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2rem;
+        background: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        border: none;
+        color: #666;
+        padding: 0.5rem 0;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #111;
+        border-bottom: 2px solid #111;
+    }
+
+    /* Download buttons */
+    .stDownloadButton > button {
+        background: #f8f8f8;
+        color: #333;
+        border: 1px solid #e5e5e5;
+    }
+    .stDownloadButton > button:hover {
+        background: #f0f0f0;
+        color: #111;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Header
+st.markdown("""
+<div class="main-header">
+    <h1>Video Summarizer</h1>
+    <p>AI-powered summaries for any video</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Feature highlights
+st.markdown("""
+<div class="feature-row">
+    <div class="feature-item">
+        <div class="feature-icon">🎬</div>
+        <div class="feature-text">1000+ Sites</div>
+    </div>
+    <div class="feature-item">
+        <div class="feature-icon">🎤</div>
+        <div class="feature-text">Auto Transcribe</div>
+    </div>
+    <div class="feature-item">
+        <div class="feature-icon">🌍</div>
+        <div class="feature-text">Multi-Language</div>
+    </div>
+    <div class="feature-item">
+        <div class="feature-icon">📄</div>
+        <div class="feature-text">Export Options</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 def extract_video_id(url: str) -> str | None:

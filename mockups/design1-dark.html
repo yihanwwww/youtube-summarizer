@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Summarizer - Modern Dark Design</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .header p { color: #888; font-size: 1.1rem; }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .input-group { margin-bottom: 20px; }
+        .input-group label {
+            display: block;
+            color: #aaa;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        .input-field {
+            width: 100%;
+            padding: 14px 18px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 20px rgba(102,126,234,0.3);
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102,126,234,0.4);
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+        }
+        .feature {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .feature-icon { font-size: 2rem; margin-bottom: 10px; }
+        .feature h3 { font-size: 0.9rem; color: #ccc; }
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: rgba(0,0,0,0.4);
+            border-right: 1px solid rgba(255,255,255,0.1);
+            padding: 30px 20px;
+        }
+        .sidebar h2 {
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .main { margin-left: 300px; }
+        .api-select {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .api-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+        }
+        .api-btn.active {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-color: transparent;
+        }
+        .result-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 20px;
+        }
+        .result-card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        .result-card p { color: #bbb; line-height: 1.7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Settings</h2>
+        <div class="input-group">
+            <label>AI Provider</label>
+            <div class="api-select">
+                <button class="api-btn active">Gemini</button>
+                <button class="api-btn">Claude</button>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>API Key</label>
+            <input type="password" class="input-field" placeholder="Enter your API key">
+        </div>
+        <div class="input-group">
+            <label>Export Format</label>
+            <select class="input-field">
+                <option>Markdown</option>
+                <option>PDF</option>
+                <option>Word</option>
+                <option>HTML</option>
+            </select>
+        </div>
+    </div>
+    <div class="main">
+        <div class="container">
+            <div class="header">
+                <h1>Video Summarizer</h1>
+                <p>Summarize videos from YouTube, TikTok, Twitter & 1000+ platforms</p>
+            </div>
+            <div class="card">
+                <div class="input-group">
+                    <label>Video URL</label>
+                    <input type="text" class="input-field" placeholder="Paste any video URL here...">
+                </div>
+                <button class="btn">Summarize Video</button>
+            </div>
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🎬</div>
+                    <h3>1000+ Platforms</h3>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🎤</div>
+                    <h3>Whisper AI</h3>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🌍</div>
+                    <h3>Multi-Language</h3>
+                </div>
+            </div>
+            <div class="result-card">
+                <h2>Summary Preview</h2>
+                <p>Your video summary will appear here with key points, detailed breakdown, and actionable takeaways...</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
