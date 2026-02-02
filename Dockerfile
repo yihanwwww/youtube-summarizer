@@ -29,8 +29,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy app code
 COPY --chown=user . .
 
-# Expose port (Hugging Face uses 7860)
-EXPOSE 7860
+# Expose port (Render uses 10000, HF uses 7860)
+EXPOSE 10000
 
-# Run Streamlit on port 7860
-CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0", "--server.fileWatcherType=none"]
+# Run Streamlit - port configurable via PORT env var (defaults to 10000 for Render)
+CMD streamlit run app.py --server.port=${PORT:-10000} --server.address=0.0.0.0 --server.fileWatcherType=none
