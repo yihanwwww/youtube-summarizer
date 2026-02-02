@@ -1,34 +1,52 @@
-# YouTube Video Summarizer
+# Video Summarizer
 
-Summarize YouTube videos using Claude AI. Supports single videos or entire channels.
+Summarize videos from **YouTube, TikTok, Twitter, Bilibili, Vimeo**, and 1000+ platforms using AI.
 
 ## Features
 
-- **Single Video Summarization** - Paste a YouTube URL and get a structured summary
-- **Batch Channel Processing** - Summarize multiple videos from a channel
-- **Multi-language Support** - Works with English and Chinese videos, reports always in English
-- **Export Formats** - Download as Markdown, HTML, PDF, or Word (.docx)
+- **Multi-Platform Support** - Works with YouTube, TikTok, Twitter/X, Instagram, Bilibili, Vimeo, and 1000+ sites
+- **AI-Powered Summaries** - Choose between Google Gemini (free) or Anthropic Claude
+- **Auto-Transcription** - Uses Whisper AI when captions aren't available
+- **Multi-Language** - Supports English, Chinese, and other languages (reports in English)
+- **Export Options** - Download as Markdown, HTML, PDF, or Word
+- **Batch Processing** - Summarize entire YouTube channels
 
-## Setup
+## Quick Start
 
-1. Clone this repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Run the app: `streamlit run app.py`
+1. Visit the app
+2. Get a free API key:
+   - **Google Gemini (Free)**: https://aistudio.google.com/app/apikey
+   - **Anthropic Claude ($5+)**: https://console.anthropic.com/
+3. Paste any video URL
+4. Click "Summarize"
 
-## API Keys Required
+## Run Locally
 
-- **Anthropic API Key** (required) - Get one at https://console.anthropic.com/
-- **YouTube Data API Key** (optional, for batch processing) - Get one at https://console.cloud.google.com/
+```bash
+git clone https://github.com/yihanwwww/youtube-summarizer.git
+cd youtube-summarizer
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-## Deploy to Streamlit Cloud
+## Supported Platforms
 
-1. Push this repo to GitHub
-2. Go to https://share.streamlit.io/
-3. Connect your GitHub repo
-4. Add your API keys in Settings → Secrets:
-   ```
-   ANTHROPIC_API_KEY = "your-key-here"
-   YOUTUBE_API_KEY = "your-key-here"
-   ```
+- YouTube, YouTube Shorts
+- TikTok, Douyin
+- Twitter/X
+- Instagram Reels
+- Bilibili
+- Vimeo, Dailymotion
+- Facebook, Twitch
+- And 1000+ more via yt-dlp
 
-Built with Streamlit and Claude AI.
+## API Keys
+
+Each user enters their own API key - keys are not stored on the server.
+
+| Provider | Cost | Get Key |
+|----------|------|---------|
+| Google Gemini | Free (60 req/min) | [Get Key](https://aistudio.google.com/app/apikey) |
+| Anthropic Claude | $5 minimum | [Get Key](https://console.anthropic.com/) |
+
+Built with Streamlit, Whisper, and yt-dlp.
