@@ -4,6 +4,7 @@ import re
 import os
 import io
 import tempfile
+import subprocess
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
     TranscriptsDisabled,
@@ -16,6 +17,13 @@ import markdown
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+# Try to import whisper (optional dependency)
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
 
 load_dotenv()
 
@@ -119,7 +127,51 @@ def get_channel_videos(channel_identifier: str, youtube_api_key: str, max_result
     return videos
 
 
-def get_transcript(video_id: str, preferred_languages: list[str] = None) -> tuple[str, str]:
+def transcribe_with_whisper(video_id: str, model_size: str = "base") -> tuple[str, str]:
+    """Download audio from YouTube and transcribe with Whisper.
+
+    Returns: (transcript_text, language_code)
+    """
+    if not WHISPER_AVAILABLE:
+        raise RuntimeError("Whisper is not installed")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = os.path.join(tmpdir, "audio.mp3")
+
+        # Download audio using yt-dlp
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        cmd = [
+            "yt-dlp",
+            "-x",  # Extract audio
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--js-runtimes", "node",
+            "-o", audio_path,
+            url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to download audio: {result.stderr}")
+
+        # Find the actual audio file (yt-dlp may add extension)
+        audio_files = [f for f in os.listdir(tmpdir) if f.endswith(('.mp3', '.m4a', '.webm', '.opus'))]
+        if not audio_files:
+            raise RuntimeError("No audio file found after download")
+
+        actual_audio_path = os.path.join(tmpdir, audio_files[0])
+
+        # Load Whisper model and transcribe
+        model = whisper.load_model(model_size)
+        result = model.transcribe(actual_audio_path)
+
+        transcript_text = result["text"]
+        language = result.get("language", "en")
+
+        return transcript_text, language
+
+
+def get_transcript(video_id: str, preferred_languages: list[str] = None, use_whisper_fallback: bool = True) -> tuple[str, str]:
     """Fetch transcript from YouTube video with language preference.
 
     Returns: (transcript_text, language_code)
@@ -127,49 +179,83 @@ def get_transcript(video_id: str, preferred_languages: list[str] = None) -> tupl
     if preferred_languages is None:
         preferred_languages = ['en', 'zh-Hans', 'zh-Hant', 'zh', 'zh-CN', 'zh-TW']
 
-    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+    ytt_api = YouTubeTranscriptApi()
 
-    # Try to find a transcript in preferred languages
-    transcript = None
-    lang_code = None
+    # Try to fetch with preferred languages directly
+    try:
+        transcript = ytt_api.fetch(video_id, languages=preferred_languages)
+        # Determine which language was used
+        lang_code = 'en'  # default
+        for lang in preferred_languages:
+            if lang.startswith('zh'):
+                # Check if transcript contains Chinese characters
+                sample = str(transcript[:100]) if transcript else ""
+                if any('\u4e00' <= char <= '\u9fff' for char in sample):
+                    lang_code = lang
+                    break
 
-    # First try manually created transcripts
-    for lang in preferred_languages:
-        try:
-            transcript = transcript_list.find_manually_created_transcript([lang])
-            lang_code = lang
-            break
-        except NoTranscriptFound:
-            continue
+        full_text = " ".join([entry.text for entry in transcript])
+        return full_text, lang_code
+    except Exception:
+        pass
 
-    # Then try auto-generated transcripts
-    if transcript is None:
+    # Fallback: try listing available transcripts
+    try:
+        transcript_list = ytt_api.list(video_id)
+
+        # Try to find a transcript in preferred languages
+        transcript = None
+        lang_code = None
+
+        # First try manually created transcripts
         for lang in preferred_languages:
             try:
-                transcript = transcript_list.find_generated_transcript([lang])
+                transcript = transcript_list.find_manually_created_transcript([lang])
                 lang_code = lang
                 break
             except NoTranscriptFound:
                 continue
 
-    # If still no transcript, get whatever is available
-    if transcript is None:
-        for t in transcript_list:
-            transcript = t
-            lang_code = t.language_code
-            break
+        # Then try auto-generated transcripts
+        if transcript is None:
+            for lang in preferred_languages:
+                try:
+                    transcript = transcript_list.find_generated_transcript([lang])
+                    lang_code = lang
+                    break
+                except NoTranscriptFound:
+                    continue
 
-    if transcript is None:
-        raise NoTranscriptFound(video_id, preferred_languages, transcript_list)
+        # If still no transcript, get whatever is available
+        if transcript is None:
+            for t in transcript_list:
+                transcript = t
+                lang_code = t.language_code
+                break
 
-    fetched = transcript.fetch()
-    full_text = " ".join([entry["text"] for entry in fetched])
-    return full_text, lang_code
+        if transcript is None:
+            raise NoTranscriptFound(video_id, preferred_languages, transcript_list)
+
+        fetched = transcript.fetch()
+        full_text = " ".join([entry.text for entry in fetched])
+        return full_text, lang_code
+    except NoTranscriptFound:
+        if use_whisper_fallback and WHISPER_AVAILABLE:
+            return transcribe_with_whisper(video_id)
+        raise
+    except Exception as e:
+        if use_whisper_fallback and WHISPER_AVAILABLE:
+            return transcribe_with_whisper(video_id)
+        raise NoTranscriptFound(video_id, preferred_languages, None) from e
 
 
 def summarize_with_claude(transcript: str, api_key: str, source_language: str = "en", video_title: str = "") -> str:
     """Send transcript to Claude API for summarization."""
-    client = anthropic.Anthropic(api_key=api_key)
+    # Explicitly use real Anthropic API (not local proxy)
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        base_url="https://api.anthropic.com"
+    )
 
     language_note = ""
     if source_language.startswith('zh'):
@@ -367,10 +453,20 @@ with tab1:
                 try:
                     with st.status("Processing video...", expanded=True) as status:
                         st.write("Fetching transcript...")
-                        transcript, lang_code = get_transcript(video_id)
+                        try:
+                            transcript, lang_code = get_transcript(video_id, use_whisper_fallback=False)
+                            transcript_source = "YouTube captions"
+                        except (NoTranscriptFound, TranscriptsDisabled, Exception):
+                            if WHISPER_AVAILABLE:
+                                st.write("No captions found. Using Whisper to transcribe audio...")
+                                st.write("(This may take a few minutes for longer videos)")
+                                transcript, lang_code = transcribe_with_whisper(video_id)
+                                transcript_source = "Whisper transcription"
+                            else:
+                                raise NoTranscriptFound(video_id, [], None)
 
                         lang_display = "Chinese" if lang_code.startswith('zh') else "English"
-                        st.write(f"Transcript fetched ({len(transcript):,} characters, {lang_display})")
+                        st.write(f"Transcript fetched via {transcript_source} ({len(transcript):,} characters, {lang_display})")
                         st.write("Generating summary with Claude...")
 
                         summary = summarize_with_claude(transcript, user_api_key, lang_code)
@@ -425,15 +521,20 @@ with tab1:
                 except TranscriptsDisabled:
                     st.error("Transcripts are disabled for this video.")
                 except NoTranscriptFound:
-                    st.error("No transcript found for this video. It may not have captions.")
+                    if not WHISPER_AVAILABLE:
+                        st.error("No captions found and Whisper is not installed. Install whisper to transcribe videos without captions.")
+                    else:
+                        st.error("No transcript found for this video. It may not have captions.")
                 except VideoUnavailable:
                     st.error("This video is unavailable.")
                 except anthropic.AuthenticationError:
                     st.error("Invalid Anthropic API key. Please check your key.")
                 except anthropic.RateLimitError:
                     st.error("Rate limit exceeded. Please try again later.")
+                except anthropic.APIConnectionError as e:
+                    st.error(f"Could not connect to Anthropic API. Check your internet connection. Details: {str(e)}")
                 except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
+                    st.error(f"An error occurred: {type(e).__name__}: {str(e)}")
 
 with tab2:
     st.subheader("Process Entire Channel")

@@ -6,3 +6,5 @@ google-api-python-client>=2.100.0
 markdown>=3.5.0
 weasyprint>=60.0
 python-docx>=1.0.0
+openai-whisper>=20231117
+yt-dlp>=2024.1.0
